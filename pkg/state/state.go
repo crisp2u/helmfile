@@ -1430,12 +1430,38 @@ func (st *HelmState) prepareDiffReleases(helm helmexec.Interface, additionalValu
 		o.Apply(opts)
 	}
 
+	mu := &sync.Mutex{}
+	installedReleases := map[string]bool{}
+
+	isInstalled := func(r *ReleaseSpec) bool {
+		mu.Lock()
+		defer mu.Unlock()
+
+		id := ReleaseToID(r)
+
+		if v, ok := installedReleases[id]; ok {
+			return v
+		}
+
+		v, err := st.isReleaseInstalled(st.createHelmContext(r, 0), helm, *r)
+		if err != nil {
+			st.logger.Warnf("confirming if the release is already installed or not: %v", err)
+		} else {
+			installedReleases[id] = v
+		}
+
+		return v
+	}
+
 	releases := []*ReleaseSpec{}
 	for i, _ := range st.Releases {
 		if !st.Releases[i].Desired() {
 			continue
 		}
 		if st.Releases[i].Installed != nil && !*(st.Releases[i].Installed) {
+			continue
+		}
+		if opts.SkipDiffOnInstall && !isInstalled(&st.Releases[i]) {
 			continue
 		}
 		releases = append(releases, &st.Releases[i])
@@ -1496,6 +1522,10 @@ func (st *HelmState) prepareDiffReleases(helm helmexec.Interface, additionalValu
 
 				if suppressSecrets {
 					flags = append(flags, "--suppress-secrets")
+				}
+
+				if opts.DisableValidationOnInstall && !isInstalled(release) {
+					flags = append(flags, "--disable-validation")
 				}
 
 				if opts.NoColor {
@@ -1571,6 +1601,9 @@ type DiffOpts struct {
 	Set     []string
 
 	SkipCleanup bool
+
+	SkipDiffOnInstall          bool
+	DisableValidationOnInstall bool
 }
 
 func (o *DiffOpts) Apply(opts *DiffOpts) {

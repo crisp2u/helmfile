@@ -56,6 +56,9 @@ type ApplyConfigProvider interface {
 	concurrencyConfig
 	interactive
 	loggingConfig
+
+	SkipDiffOnInstall() bool
+	DisableValidationOnInstall() bool
 }
 
 type SyncConfigProvider interface {
